@@ -177,11 +177,14 @@ class MOELayer(Base):
         # Pro of --max-tokens: more flexible for MT variable sequence lengths
         # Con of --max-tokens: extra all-reduce needed to figure out optimal padding without running OOM
         if expected_bsz == 0:
-            expected_dim = reshaped_input_shape[0] * torch.ones(
-                (1,), dtype=torch.long, device=input.device
-            )
-            dist.all_reduce(expected_dim, group=dist.group.WORLD, op=dist.ReduceOp.MAX)
-            expected_dim = int(expected_dim.item())
+            if dist.get_world_size() > 1:
+                expected_dim = reshaped_input_shape[0] * torch.ones(
+                    (1,), dtype=torch.long, device=input.device
+                )
+                dist.all_reduce(expected_dim, group=dist.group.WORLD, op=dist.ReduceOp.MAX)
+                expected_dim = int(expected_dim.item())
+            else:
+                expected_dim = reshaped_input_shape[0]
             padded_input = torch.zeros(
                 (expected_dim, reshaped_input_shape[1]),
                 dtype=input.dtype,
@@ -239,8 +242,10 @@ class MOELayer(Base):
         )
         chunks = dispatched_input.chunk(self.num_local_experts, dim=1)
         expert_outputs = []
-        for chunk, expert in zip(chunks, self.experts):
-            expert_outputs += [expert(chunk)]
+        # for chunk, expert in zip(chunks, self.experts):
+        #     expert_outputs += [expert(chunk)]
+        for i in range(len(chunks)):
+            expert_outputs += [self.experts[i](chunks[i])]
         expert_output = torch.cat(expert_outputs, dim=1)
 
         if self.all2all_size > 1:
@@ -266,7 +271,7 @@ class MOELayer(Base):
         combined_output = combined_output.reshape(input.shape)
         combined_output = combined_output[: input_shape[0], :, :]
 
-        self.record_all_to_all_stats()
+        # self.record_all_to_all_stats()
 
         return combined_output, l_aux
 

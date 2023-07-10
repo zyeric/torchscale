@@ -493,7 +493,8 @@ class Top2Gate(torch.nn.Module):
         if self.use_xmoe:
             input = self.wg_reduction(input)
             with torch.no_grad():
-                wg_norm = self.wg.norm(p=2.0, dim=1, keepdim=True)
+                # wg_norm = self.wg.norm(p=2.0, dim=1, keepdim=True)
+                wg_norm = torch.norm(self.wg, p=2.0, dim=1, keepdim=True, out=None)
                 self.wg.mul_(1.5 / wg_norm)
             logits = self._cosine(input, self.wg)
             logits = self._make_finite(logits)
@@ -514,7 +515,10 @@ class Top2Gate(torch.nn.Module):
         assert mat1.dim() == 2
         assert mat2.dim() == 2
         # mat1 = F.normalize(mat1, p=2.0, dim=1, eps=eps)
-        mat2 = F.normalize(mat2.float(), p=2.0, dim=1, eps=eps)
+
+        # mat2 = F.normalize(mat2.float(), p=2.0, dim=1, eps=eps)
+        denom = torch.norm(mat2.float(), p=2.0, dim=1, keepdim=True, out=None).clamp_min(eps).expand_as(mat2.float())
+        mat2 = mat2.float() / denom
         return mat1.float().matmul(mat2.transpose(0, 1)).type_as(mat1)
 
     def _make_finite(self, scores):
